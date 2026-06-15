@@ -7,6 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const toolRoot = path.dirname(__filename);
 
 const scenesFolder = process.argv[2];
+console.log(`Checking directory: ${scenesFolder}`);
 
 if (!scenesFolder) {
   console.error("Usage: node batch-evaluate-scenes.mjs <scenes-folder>");
