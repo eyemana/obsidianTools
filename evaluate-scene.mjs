@@ -8,9 +8,6 @@ const __filename = fileURLToPath(import.meta.url);
 const toolRoot = path.dirname(__filename);
 const configPath = path.join(toolRoot, "config.local.json");
 
-console.log(toolRoot);
-console.log(configPath);
-
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
 
 const filePath = process.argv[2];
@@ -34,7 +31,7 @@ ${parsed.content}
 
 Required JSON:
 {
-  "tension": number
+  "ai_tension": number
 }
 `;
 
@@ -54,9 +51,9 @@ const response = await fetch(config.ollamaUrl, {
 const result = await response.json();
 const scores = JSON.parse(result.response);
 
-parsed.data.Tension = scores.tension;
+parsed.data.ai_tension = scores.ai_tension;
+parsed.data.ai_model = config.model;
+parsed.data.ai_updated = new Date().toISOString();
 
 const updated = matter.stringify(parsed.content, parsed.data);
 fs.writeFileSync(filePath, updated, "utf8");
-
-console.log(`Updated ${filePath} with Tension=${scores.tension}`);
