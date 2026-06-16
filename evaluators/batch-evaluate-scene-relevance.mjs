@@ -29,8 +29,9 @@ for (const filePath of markdownFiles) {
     const output = execFileSync(
       "node",
       [
-        path.join(toolRoot, "evaluate-scene-relevance.mjs"),
-        filePath
+        path.join(toolRoot, "evaluate-scene-metric.mjs"),
+        filePath,
+        "Relevance"
       ],
       { encoding: "utf8" }
     );

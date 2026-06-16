@@ -26,6 +26,42 @@ if (!filePath || !metricName) {
 }
 const metricKey = toCamelCase(metricName);
 
+function normalizeScoreMap(scores, expectedNames, label, rawResponse) {
+  if (!scores || typeof scores !== "object") {
+    throw new Error(`Invalid ${label} scores: ${rawResponse}`);
+  }
+
+  const normalized = {};
+
+  for (const name of expectedNames) {
+    const rawValue = scores[name];
+
+    let score;
+    let rationale = "";
+
+    if (typeof rawValue === "number") {
+      score = rawValue;
+    } else if (
+      rawValue &&
+      typeof rawValue === "object" &&
+      typeof rawValue.score === "number"
+    ) {
+      score = rawValue.score;
+      rationale =
+        typeof rawValue.rationale === "string"
+          ? rawValue.rationale
+          : "";
+    } else {
+      score = 0;
+      rationale = `${label} was listed for evaluation, but the model did not return a score.`;
+    }
+    normalized[name] = { score, rationale };
+  }
+
+  return normalized;
+}
+
+
 const raw = fs.readFileSync(filePath, "utf8");
 const parsed = matter(raw);
 
@@ -80,12 +116,22 @@ const arcDefinitions = formatDefinitions(
 const prompt = `
 Return JSON only.
 Characters to score:
-${JSON.stringify(parsed.data.characters ?? [], null, 2)}
+${JSON.stringify(characterNames, null, 2)}
 
-Use EXACTLY these character names as JSON keys.
-Do not shorten names.
-Do not use first names.
-Do not add characters not listed here.
+Plot Threads to score:
+${JSON.stringify(plotThreadNames, null, 2)}
+
+Story Engines to score:
+${JSON.stringify(storyEngineNames, null, 2)}
+
+Arcs to score:
+${JSON.stringify(arcNames, null, 2)}
+
+You must return one score object for every listed character, plot thread, story engine, and arc.
+Use EXACTLY the listed names as JSON keys.
+Do not omit any listed item.
+Do not add unlisted items.
+If an item is barely present, still include it with a low score and rationale.
 
 The rationale-related JSON elements are to be supplied by you as a single entence supporting the associated score value you gave.
 
@@ -156,37 +202,6 @@ const result = await response.json();
 
 const scores = JSON.parse(result.response);
 
-const normalizedCharacters = {};
-
-for (const characterName of characterNames) {
-  const rawValue = scores.characters?.[characterName];
-
-  let score;
-  let rationale = "";
-
-  if (typeof rawValue === "number") {
-    score = rawValue;
-  } else if (
-    rawValue &&
-    typeof rawValue === "object" &&
-    typeof rawValue.score === "number"
-  ) {
-    score = rawValue.score;
-    rationale = typeof rawValue.rationale === "string"
-      ? rawValue.rationale
-      : "";
-  } else {
-    throw new Error(
-      `Missing or invalid score for character "${characterName}": ${result.response}`
-    );
-  }
-
-  normalizedCharacters[characterName] = {
-    score,
-    rationale
-  };
-}
-
 if (typeof scores.scene !== "number") {
   throw new Error(`Invalid scene ${metricKey} score: ${result.response}`);
 }
@@ -195,17 +210,6 @@ if (typeof scores.sceneRationale !== "string") {
   throw new Error(`Invalid scene ${metricKey} rationale: ${result.response}`);
 }
 
-if (!scores.characters || typeof scores.characters !== "object") {
-  throw new Error(`Invalid character ${metricKey} scores: ${result.response}`);
-}
-
-if (!scores.plotThreads || typeof scores.plotThreads !== "object") {
-  throw new Error(`Invalid plotThreads ${metricKey} scores: ${result.response}`);
-}
-
-if (!scores.storyEngines || typeof scores.storyEngines !== "object") {
-  throw new Error(`Invalid storyEngine ${metricKey} scores: ${result.response}`);
-}
 
 if (!scores.arcs || typeof scores.arcs !== "object") {
   throw new Error(`Invalid arc ${metricKey} scores: ${result.response}`);
@@ -216,10 +220,30 @@ parsed.data.ai.model = config.model;
 parsed.data.ai[metricKey] = {
   scene: scores.scene,
   sceneRationale: scores.sceneRationale,
-  characters: normalizedCharacters,
-  plotThreads: scores.plotThreads,
-  storyEngines: scores.storyEngines,
-  arcs: scores.arcs,
+  characters: normalizeScoreMap(
+    scores.characters,
+    characterNames,
+    "character",
+    result.response
+  ),
+  plotThreads: normalizeScoreMap(
+    scores.plotThreads ?? {},
+    plotThreadNames,
+    "plot thread",
+    result.response
+  ),
+  storyEngines: normalizeScoreMap(
+    scores.storyEngines ?? {},
+    storyEngineNames,
+    "story engine",
+    result.response
+  ),
+  arcs: normalizeScoreMap(
+    scores.arcs ?? {},
+    arcNames,
+    "arc",
+    result.response
+  ),
   updated: new Date().toISOString()
 };
 

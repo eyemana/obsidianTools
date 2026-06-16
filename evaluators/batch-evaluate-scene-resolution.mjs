@@ -30,7 +30,7 @@ for (const filePath of markdownFiles) {
       [
         path.join(toolRoot, "evaluate-scene-metric.mjs"),
         filePath,
-        "Tension"
+        "Resolution"
       ],
       { encoding: "utf8" }
     );
