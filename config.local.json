@@ -44,7 +44,7 @@
     "nodePath": "node",
 
     // What Storyboard should do after saving a changed tile order.
-    // "manual": only save timeline_order; use Queue-Reader-Awareness manually.
+    // "manual": only save chapter_order and scene_order; use Queue-Reader-Awareness manually.
     // "ask": ask whether to queue Reader Awareness after saving order.
     // "auto": queue Reader Awareness immediately after saving order.
     "storyboardReaderAwarenessAfterReorder": "ask",

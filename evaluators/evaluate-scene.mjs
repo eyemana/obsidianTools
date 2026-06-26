@@ -275,14 +275,63 @@ const pocRoot = findAncestorFolder(filePath, "POC");
 parsed.data.ai = parsed.data.ai ?? {};
 parsed.data.ai.model = config.model;
 
-function getTimelineOrder(scene) {
-  const order = Number(scene.data.timeline_order);
-  return Number.isFinite(order) ? order : null;
+function numericFrontmatter(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function getStoryOrder(scene) {
+  const chapterOrder = numericFrontmatter(scene.data.chapter_order) ??
+    numericFrontmatter(scene.data.chapter);
+  const sceneOrder = numericFrontmatter(scene.data.scene_order);
+
+  if (chapterOrder === null || sceneOrder === null) {
+    return null;
+  }
+
+  return {
+    chapterOrder,
+    sceneOrder
+  };
+}
+
+function compareStoryOrder(a, b) {
+  if (a.storyOrder && b.storyOrder) {
+    if (a.storyOrder.chapterOrder !== b.storyOrder.chapterOrder) {
+      return a.storyOrder.chapterOrder - b.storyOrder.chapterOrder;
+    }
+
+    if (a.storyOrder.sceneOrder !== b.storyOrder.sceneOrder) {
+      return a.storyOrder.sceneOrder - b.storyOrder.sceneOrder;
+    }
+  } else if (a.storyOrder) {
+    return -1;
+  } else if (b.storyOrder) {
+    return 1;
+  }
+
+  return a.fileName.localeCompare(b.fileName);
+}
+
+function isPriorStoryScene(scene, currentOrder, currentName) {
+  if (currentOrder === null) {
+    return scene.fileName.localeCompare(currentName) < 0;
+  }
+
+  if (scene.storyOrder === null) {
+    return false;
+  }
+
+  if (scene.storyOrder.chapterOrder !== currentOrder.chapterOrder) {
+    return scene.storyOrder.chapterOrder < currentOrder.chapterOrder;
+  }
+
+  return scene.storyOrder.sceneOrder < currentOrder.sceneOrder;
 }
 
 function listPriorScenes(currentFilePath, currentScene) {
   const scenesFolder = path.dirname(currentFilePath);
-  const currentOrder = getTimelineOrder(currentScene);
+  const currentOrder = getStoryOrder(currentScene);
   const currentName = path.basename(currentFilePath);
 
   return fs.readdirSync(scenesFolder, { withFileTypes: true })
@@ -296,7 +345,7 @@ function listPriorScenes(currentFilePath, currentScene) {
       return {
         fileName: entry.name,
         name: scene.data.name ?? path.basename(entry.name, ".md"),
-        timelineOrder: getTimelineOrder(scene),
+        storyOrder: getStoryOrder(scene),
         readerKnowledge: scene.data.reader_knowledge ?? "",
         characters: scene.data.characters ?? [],
         plotThreads: scene.data.plotThreads ?? [],
@@ -304,23 +353,8 @@ function listPriorScenes(currentFilePath, currentScene) {
         content: scene.content.trim()
       };
     })
-    .filter(scene => {
-      if (currentOrder === null) {
-        return scene.fileName.localeCompare(currentName) < 0;
-      }
-
-      return scene.timelineOrder !== null && scene.timelineOrder < currentOrder;
-    })
-    .sort((a, b) => {
-      const orderA = a.timelineOrder ?? Number.MAX_SAFE_INTEGER;
-      const orderB = b.timelineOrder ?? Number.MAX_SAFE_INTEGER;
-
-      if (orderA !== orderB) {
-        return orderA - orderB;
-      }
-
-      return a.fileName.localeCompare(b.fileName);
-    });
+    .filter(scene => isPriorStoryScene(scene, currentOrder, currentName))
+    .sort(compareStoryOrder);
 }
 
 function formatPriorSceneContext(scenes) {
@@ -330,7 +364,11 @@ function formatPriorSceneContext(scenes) {
 
   return scenes.map(scene => {
     return `Scene: ${scene.name}
-Timeline order: ${scene.timelineOrder ?? "unknown"}
+Story order: ${
+  scene.storyOrder
+    ? `${scene.storyOrder.chapterOrder}.${scene.storyOrder.sceneOrder}`
+    : "unknown"
+}
 Reader knowledge marker: ${scene.readerKnowledge || "unspecified"}
 Characters: ${JSON.stringify(scene.characters)}
 Plot threads: ${JSON.stringify(scene.plotThreads)}
