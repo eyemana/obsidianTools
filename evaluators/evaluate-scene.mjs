@@ -608,9 +608,9 @@ function getReaderAwarenessGuidance(targetConfig) {
     return {
       subject: "characters",
       meaning:
-        "Reader awareness means how much NEW information the reader gains during this scene about a character.",
+        "Reader awareness means how much this scene increases, refreshes, or reinforces reader-facing awareness of a character, including explicit mention, first introduction, existence, role, relationship to the setting or cast, behavior, habits, traits, goals, stakes, choices, or reputation.",
       low:
-        "1-3 = the reader gains minor, indirect, or confirmatory information about the character.",
+        "1-3 = the reader receives minor, indirect, confirmatory, first-contact, or salience-building awareness of the character.",
       medium:
         "4-6 = the reader gains meaningful new information about the character's role, traits, relationships, goals, history, choices, or stakes.",
       high:
@@ -620,7 +620,11 @@ function getReaderAwarenessGuidance(targetConfig) {
       cautions: [
         "Score what the reader newly learns about the character, not whether the character is important.",
         "The reader can learn about absent characters if the scene reveals meaningful information about them.",
-        "If a character merely appears without new reader-facing information, use delta 0 or a low confirmatory score."
+        "Do not infer awareness from the frontmatter list alone; score only what is visible in the prose or reader knowledge marker.",
+        "Do not require first contact for a nonzero score; repeated on-page mentions can still earn a low positive delta when they keep the character present in the reader's mind.",
+        "If the prose names or clearly identifies the character, this is usually at least delta 1 even when the reader has prior context.",
+        "If a mention also establishes or reinforces setting, occupation, relationship, routine, attitude, social role, or a memorable behavioral detail, use delta 2-4 depending on specificity.",
+        "Use delta 0 only when the scene gives the reader no practical awareness signal for the character beyond the character being listed in frontmatter."
       ]
     };
   }
