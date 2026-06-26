@@ -19,6 +19,8 @@ Cancel a queued or running batch from Obsidian with `Templates/Cancel-Batch-Eval
 
 Scheduler behavior is controlled in `config.local.json`:
 
+The config loader accepts JSON with comments, so `//` and `/* ... */` comments are allowed in `config.local.json` and `config.example.json`.
+
 ```json
 {
   "scheduler": {

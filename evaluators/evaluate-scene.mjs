@@ -10,12 +10,12 @@ import {
   formatDefinitions,
   toCamelCase
 } from "../vault-utils.mjs";
+import { loadConfig } from "../tool-config.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
-const toolRoot = path.dirname(__filename);
-const configPath = path.join(toolRoot, "..", "config.local.json");
-
-const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+const evaluatorRoot = path.dirname(__filename);
+const toolRoot = path.join(evaluatorRoot, "..");
+const config = loadConfig(toolRoot);
 
 const filePath = process.argv[2];
 const metricName = process.argv[3];

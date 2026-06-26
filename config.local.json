@@ -1,4 +1,67 @@
 {
-	  "ollamaUrl": "http://localhost:11434/api/generate",
-	    "model": "qwen2.5:7b"
+  // Ollama generate endpoint used by evaluators/evaluate-scene.mjs.
+  // Typical local value: "http://localhost:11434/api/generate".
+  "ollamaUrl": "http://localhost:11434/api/generate",
+
+  // Ollama model name to use for every evaluator call.
+  // Example options depend on what is installed locally: "qwen2.5:7b", "llama3.1:8b", etc.
+  "model": "qwen2.5:7b",
+
+  "scheduler": {
+    // How jobs are picked up after Templater queues them.
+    // "manual": Templater queues a job and starts a worker that drains the queue, then exits.
+    // "background": Templater only queues jobs; a separately started --watch worker polls for work.
+    "mode": "manual",
+
+    // Directory for job files, logs, cancel markers, and the worker lock.
+    // Relative paths are resolved from the obsidianTools folder; absolute paths are allowed.
+    "queueDir": ".queue",
+
+    // Delay between evaluator calls. Increase this if Ollama or the machine is overloaded.
+    // Lower values run faster but put more pressure on local resources.
+    "throttleMs": 1000,
+
+    // Background-mode poll interval. Only used by worker.mjs --watch / scheduler mode "background".
+    "pollIntervalMs": 30000,
+
+    // In manual mode, start a detached worker from the Batch-Evaluate-Scenes Templater command.
+    // Set false if you want Templater to queue only and you will run worker.mjs --drain yourself.
+    "launchWorkerFromTemplater": true,
+
+    // Show periodic Obsidian notices while the queued job is running.
+    // Set false if you prefer to watch .queue/logs or job JSON files directly.
+    "monitorFromTemplater": true,
+
+    // How often Obsidian checks job progress and shows a notice while monitoring.
+    // Notices are only shown when the message changes.
+    "statusNoticeIntervalMs": 5000,
+
+    // Safety cap for Obsidian-side monitoring. The worker keeps running after this; notices stop.
+    "statusNoticeMaxMinutes": 240,
+
+    // Node executable used by Templater when it shells out to scheduler scripts.
+    // Use a full path here if Obsidian cannot find "node" on PATH.
+    "nodePath": "node",
+
+    // Evaluations to run for each scene, in order.
+    // Format: [metric, target].
+    // Metric options: "Relevance", "Tension", "Resolution", "Character Awareness".
+    // Target options: "Character", "Plot Thread", "Story Engine", "Arc".
+    // "Character Awareness" currently only supports target "Plot Thread".
+    "evaluations": [
+      ["Relevance", "Character"],
+      ["Relevance", "Plot Thread"],
+      ["Relevance", "Story Engine"],
+      ["Relevance", "Arc"],
+      ["Tension", "Character"],
+      ["Tension", "Plot Thread"],
+      ["Tension", "Story Engine"],
+      ["Tension", "Arc"],
+      ["Resolution", "Character"],
+      ["Resolution", "Plot Thread"],
+      ["Resolution", "Story Engine"],
+      ["Resolution", "Arc"],
+      ["Character Awareness", "Plot Thread"]
+    ]
+  }
 }

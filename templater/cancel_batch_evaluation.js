@@ -3,6 +3,77 @@ module.exports = async (tp) => {
   const fs = require("fs");
   const path = require("path");
 
+  function stripJsonComments(text) {
+    let output = "";
+    let inString = false;
+    let escaped = false;
+    let inLineComment = false;
+    let inBlockComment = false;
+
+    for (let index = 0; index < text.length; index++) {
+      const char = text[index];
+      const next = text[index + 1];
+
+      if (inLineComment) {
+        if (char === "\n" || char === "\r") {
+          inLineComment = false;
+          output += char;
+        }
+
+        continue;
+      }
+
+      if (inBlockComment) {
+        if (char === "*" && next === "/") {
+          inBlockComment = false;
+          index++;
+        }
+
+        continue;
+      }
+
+      if (inString) {
+        output += char;
+
+        if (escaped) {
+          escaped = false;
+        } else if (char === "\\") {
+          escaped = true;
+        } else if (char === "\"") {
+          inString = false;
+        }
+
+        continue;
+      }
+
+      if (char === "\"") {
+        inString = true;
+        output += char;
+        continue;
+      }
+
+      if (char === "/" && next === "/") {
+        inLineComment = true;
+        index++;
+        continue;
+      }
+
+      if (char === "/" && next === "*") {
+        inBlockComment = true;
+        index++;
+        continue;
+      }
+
+      output += char;
+    }
+
+    return output;
+  }
+
+  function parseJsonWithComments(text) {
+    return JSON.parse(stripJsonComments(text));
+  }
+
   function loadSchedulerConfig(toolsRoot) {
     const defaults = {
       queueDir: ".queue",
@@ -16,7 +87,7 @@ module.exports = async (tp) => {
       return defaults;
     }
 
-    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    const config = parseJsonWithComments(fs.readFileSync(configPath, "utf8"));
     return {
       ...defaults,
       ...(config.scheduler ?? {})

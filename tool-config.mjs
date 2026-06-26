@@ -50,6 +50,77 @@ function mergeConfig(base, override) {
   return merged;
 }
 
+export function stripJsonComments(text) {
+  let output = "";
+  let inString = false;
+  let escaped = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    const next = text[index + 1];
+
+    if (inLineComment) {
+      if (char === "\n" || char === "\r") {
+        inLineComment = false;
+        output += char;
+      }
+
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (char === "*" && next === "/") {
+        inBlockComment = false;
+        index++;
+      }
+
+      continue;
+    }
+
+    if (inString) {
+      output += char;
+
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+      output += char;
+      continue;
+    }
+
+    if (char === "/" && next === "/") {
+      inLineComment = true;
+      index++;
+      continue;
+    }
+
+    if (char === "/" && next === "*") {
+      inBlockComment = true;
+      index++;
+      continue;
+    }
+
+    output += char;
+  }
+
+  return output;
+}
+
+export function parseConfigText(text) {
+  return JSON.parse(stripJsonComments(text));
+}
+
 export function loadConfig(toolRoot) {
   const localPath = path.join(toolRoot, "config.local.json");
   const examplePath = path.join(toolRoot, "config.example.json");
@@ -59,7 +130,7 @@ export function loadConfig(toolRoot) {
     return defaultConfig;
   }
 
-  const fileConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  const fileConfig = parseConfigText(fs.readFileSync(configPath, "utf8"));
   return mergeConfig(defaultConfig, fileConfig);
 }
 
