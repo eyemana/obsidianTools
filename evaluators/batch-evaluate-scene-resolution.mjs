@@ -10,7 +10,7 @@ const scenesFolder = process.argv[2];
 console.log(`Checking directory: ${scenesFolder}`);
 
 if (!scenesFolder) {
-  console.error("Usage: node batch-evaluate-scene-tension.mjs <scenes-folder>");
+  console.error("Usage: node batch-evaluate-scene-resolution.mjs <scenes-folder>");
   process.exit(1);
 }
 

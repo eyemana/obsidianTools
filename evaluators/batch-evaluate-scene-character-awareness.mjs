@@ -28,7 +28,7 @@ for (const filePath of markdownFiles) {
     const output = execFileSync(
       "node",
       [
-        path.join(toolRoot, "evaluate-scene-character-awareness.mjs"),
+        path.join(toolRoot, "evaluate-character-awareness-by-scene.mjs"),
         filePath
       ],
       { encoding: "utf8" }

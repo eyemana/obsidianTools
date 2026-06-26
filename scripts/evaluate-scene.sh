@@ -10,4 +10,4 @@ SCENE_PATH="$1"
 
 cd "$TOOLS_ROOT"
 
-node "$TOOLS_ROOT/evaluators/evaluate-scene-metric.mjs" "$SCENE_PATH" Tension
+node "$TOOLS_ROOT/evaluators/evaluate-scene.mjs" "$SCENE_PATH" "$2" "$3"

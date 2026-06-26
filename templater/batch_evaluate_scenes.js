@@ -42,7 +42,7 @@ module.exports = async (tp) => {
       script: path.join(basePath, "obsidianTools", "scripts", "evaluate-scene-resolution.sh")
     },
     {
-      name: "Resolution",
+      name: "Character Awareness",
       script: path.join(basePath, "obsidianTools", "scripts", "evaluate-scene-character-awareness.sh")
     }
 
