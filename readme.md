@@ -138,7 +138,7 @@ If `storyboardReaderAwarenessAfterReorder` is set to `ask` or `auto`, Storyboard
 
 ## Reader Awareness
 
-Reader Awareness is a delta score, not an absolute score.
+Reader Awareness keeps `delta` as the headline score, but also captures dimensions for misdirection, confidence, and wrong-track awareness.
 
 For each scene, the evaluator asks: what does the reader newly learn in this scene, compared to prior scenes?
 
@@ -156,10 +156,46 @@ ai:
     plotThreads:
       Missing Ledger:
         delta: 7
+        salience: 8
+        confidence: 6
+        correctness: 4
+        trajectory: misdirected
+        truthStatus: misleading
+        belief: The ledger was probably misfiled.
+        source: Mara's initial assumption
         rationale: The scene reveals new evidence about where the ledger may have gone.
 ```
 
-Storyboard calculates cumulative totals by summing deltas in story order. If you change order, rerun Reader Awareness so each scene's delta is calculated against the correct prior context.
+`delta` is the cumulative chart input. `salience` is how present the subject is in the reader's mind after the scene. `confidence` is how strongly the reader likely believes their current interpretation. `correctness` is how aligned that belief is with story truth. `trajectory` and `truthStatus` capture whether the scene introduced, reinforced, corrected, confused, or misdirected awareness.
+
+Storyboard calculates cumulative totals by summing deltas in story order. If you change order, rerun Reader Awareness so each scene's delta and awareness dimensions are calculated against the correct prior context.
+
+## Character Awareness
+
+Character Awareness keeps `delta` as the headline score, but also captures what the character likely believes and whether that belief is correct.
+
+For each scene, the evaluator asks: what does each listed character plausibly learn about each listed plot thread during this scene?
+
+Scores are stored under scene frontmatter:
+
+```yaml
+ai:
+  characterAwareness:
+    plotThreads:
+      Missing Ledger:
+        Mara Bell:
+          delta: 5
+          salience: 7
+          confidence: 6
+          correctness: 4
+          trajectory: misdirected
+          truthStatus: misleading
+          belief: The ledger was probably misfiled.
+          source: initial inventory check
+          rationale: Mara notices the ledger is missing but initially interprets the evidence incorrectly.
+```
+
+`delta` is the cumulative chart input. `salience` is how present the plot thread is in the character's mind after the scene. `confidence` is how strongly the character likely believes their current interpretation. `correctness` is how aligned that belief is with story truth. `trajectory` and `truthStatus` capture whether the scene introduced, reinforced, corrected, confused, or misdirected the character's awareness.
 
 ## Reports
 

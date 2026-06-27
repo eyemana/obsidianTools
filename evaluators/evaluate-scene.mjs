@@ -176,6 +176,16 @@ function normalizeCharacterAwarenessMap(scores, plotThreadNames, characterNames)
       ? scores
       : {};
 
+  function numberOrDefault(value, fallback = 0) {
+    return typeof value === "number" && Number.isFinite(value)
+      ? value
+      : fallback;
+  }
+
+  function stringOrDefault(value, fallback = "") {
+    return typeof value === "string" ? value : fallback;
+  }
+
   for (const plotThreadName of plotThreadNames) {
     const rawPlotThread = source[plotThreadName];
     const normalizedCharacters = {};
@@ -188,26 +198,45 @@ function normalizeCharacterAwarenessMap(scores, plotThreadNames, characterNames)
           : undefined;
 
       let delta = 0;
+      let salience = 0;
+      let confidence = 0;
+      let correctness = 0;
+      let trajectory = "unchanged";
+      let truthStatus = "unknown";
+      let belief = "";
+      let evidenceSource = "";
       let rationale =
         "No new character awareness was returned for this plot thread in this scene.";
 
       if (typeof rawCharacter === "number") {
         delta = rawCharacter;
+        salience = rawCharacter;
         rationale = "";
       } else if (
         rawCharacter &&
         typeof rawCharacter === "object" &&
         typeof rawCharacter.delta === "number"
       ) {
-        delta = rawCharacter.delta;
-        rationale =
-          typeof rawCharacter.rationale === "string"
-            ? rawCharacter.rationale
-            : "";
+        delta = numberOrDefault(rawCharacter.delta);
+        salience = numberOrDefault(rawCharacter.salience, delta);
+        confidence = numberOrDefault(rawCharacter.confidence);
+        correctness = numberOrDefault(rawCharacter.correctness);
+        trajectory = stringOrDefault(rawCharacter.trajectory, trajectory);
+        truthStatus = stringOrDefault(rawCharacter.truthStatus, truthStatus);
+        belief = stringOrDefault(rawCharacter.belief);
+        evidenceSource = stringOrDefault(rawCharacter.source);
+        rationale = stringOrDefault(rawCharacter.rationale);
       }
 
       normalizedCharacters[characterName] = {
         delta,
+        salience,
+        confidence,
+        correctness,
+        trajectory,
+        truthStatus,
+        belief,
+        source: evidenceSource,
         rationale
       };
     }
@@ -225,30 +254,59 @@ function normalizeReaderAwarenessMap(scores, targetNames, label) {
       ? scores
       : {};
 
+  function numberOrDefault(value, fallback = 0) {
+    return typeof value === "number" && Number.isFinite(value)
+      ? value
+      : fallback;
+  }
+
+  function stringOrDefault(value, fallback = "") {
+    return typeof value === "string" ? value : fallback;
+  }
+
   for (const targetName of targetNames) {
     const rawTarget = source[targetName];
 
     let delta = 0;
+    let salience = 0;
+    let confidence = 0;
+    let correctness = 0;
+    let trajectory = "unchanged";
+    let truthStatus = "unknown";
+    let belief = "";
+    let evidenceSource = "";
     let rationale =
       `No new reader awareness was returned for this ${label} in this scene.`;
 
     if (typeof rawTarget === "number") {
       delta = rawTarget;
+      salience = rawTarget;
       rationale = "";
     } else if (
       rawTarget &&
       typeof rawTarget === "object" &&
       typeof rawTarget.delta === "number"
     ) {
-      delta = rawTarget.delta;
-      rationale =
-        typeof rawTarget.rationale === "string"
-          ? rawTarget.rationale
-          : "";
+      delta = numberOrDefault(rawTarget.delta);
+      salience = numberOrDefault(rawTarget.salience, delta);
+      confidence = numberOrDefault(rawTarget.confidence);
+      correctness = numberOrDefault(rawTarget.correctness);
+      trajectory = stringOrDefault(rawTarget.trajectory, trajectory);
+      truthStatus = stringOrDefault(rawTarget.truthStatus, truthStatus);
+      belief = stringOrDefault(rawTarget.belief);
+      evidenceSource = stringOrDefault(rawTarget.source);
+      rationale = stringOrDefault(rawTarget.rationale);
     }
 
     normalized[targetName] = {
       delta,
+      salience,
+      confidence,
+      correctness,
+      trajectory,
+      truthStatus,
+      belief,
+      source: evidenceSource,
       rationale
     };
   }
@@ -521,7 +579,20 @@ Do not score plot importance.
 Only score what each character plausibly learns during this scene.
 If a character is not present or cannot plausibly learn the information, use delta 0.
 
-Each rationale must be a single sentence supporting the delta.
+Also evaluate awareness dimensions:
+- salience: 0-10, how present this plot thread is in the character's mind after this scene.
+- confidence: 0-10, how strongly the character likely believes their current understanding of this plot thread.
+- correctness: 0-10, how accurate the character's likely understanding is relative to story truth and plot thread definitions available to you.
+- trajectory: one of "introduced", "reinforced", "deepened", "confirmed", "corrected", "misdirected", "contradicted", "confused", or "unchanged".
+- truthStatus: one of "accurate", "partial", "misleading", "false", "ambiguous", or "unknown".
+- belief: a short phrase stating what the character likely believes about this plot thread after this scene.
+- source: a short phrase naming the evidence source, such as direct observation, dialogue, clue, rumor, lie, memory, inference, authority, or withheld information.
+
+Use "misdirected" or truthStatus "misleading"/"false" when the character is pushed toward a plausible but incorrect track.
+Use "confused" or truthStatus "ambiguous" when the character's understanding becomes intentionally muddy.
+Use correctness 0-3 for false or badly misleading beliefs, 4-6 for partial or uncertain beliefs, and 7-10 for mostly accurate beliefs.
+Use confidence independently from correctness; a character can be highly confident and wrong.
+Each rationale must be a single sentence supporting the delta and dimensions.
 
 Use these character definitions:
 ${characterDefinitions}
@@ -539,6 +610,13 @@ Required JSON:
     "plotThreadName": {
       "characterName": {
         "delta": number,
+        "salience": number,
+        "confidence": number,
+        "correctness": number,
+        "trajectory": "string",
+        "truthStatus": "string",
+        "belief": "string",
+        "source": "string",
         "rationale": "string"
       }
     }
@@ -707,7 +785,20 @@ Do not score what characters know; this is reader-facing awareness only.
 Do not score scene relevance.
 ${guidance.cautions.join("\n")}
 
-Each rationale must be a single sentence supporting the delta.
+Also evaluate awareness dimensions:
+- salience: 0-10, how present this ${targetConfig.label} is in the reader's mind after this scene.
+- confidence: 0-10, how strongly the reader is likely to believe their current understanding of this ${targetConfig.label}.
+- correctness: 0-10, how accurate the reader's likely understanding is relative to the story truth and definitions available to you.
+- trajectory: one of "introduced", "reinforced", "deepened", "confirmed", "corrected", "misdirected", "contradicted", "confused", or "unchanged".
+- truthStatus: one of "accurate", "partial", "misleading", "false", "ambiguous", or "unknown".
+- belief: a short phrase stating what the reader is likely to believe about this ${targetConfig.label} after this scene.
+- source: a short phrase naming the evidence source, such as narration, dialogue, implication, memory, rumor, lie, dramatic irony, scene framing, or frontmatter reader_knowledge.
+
+Use "misdirected" or truthStatus "misleading"/"false" when the scene pushes the reader toward a plausible but incorrect track.
+Use "confused" or truthStatus "ambiguous" when the scene intentionally muddies the reader's understanding.
+Use correctness 0-3 for false or badly misleading beliefs, 4-6 for partial or uncertain beliefs, and 7-10 for mostly accurate beliefs.
+Use confidence independently from correctness; the reader can be highly confident and wrong.
+Each rationale must be a single sentence supporting the delta and dimensions.
 
 Use these ${targetConfig.pluralLabel} definitions:
 ${targetDefinitions}
@@ -727,6 +818,13 @@ Required JSON:
   "${targetConfig.key}": {
     "${targetConfig.label}Name": {
       "delta": number,
+      "salience": number,
+      "confidence": number,
+      "correctness": number,
+      "trajectory": "string",
+      "truthStatus": "string",
+      "belief": "string",
+      "source": "string",
       "rationale": "string"
     }
   }
