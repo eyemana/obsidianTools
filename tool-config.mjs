@@ -4,6 +4,10 @@ import path from "path";
 export const defaultConfig = {
   ollamaUrl: "http://localhost:11434/api/generate",
   model: "qwen2.5:7b",
+  awareness: {
+    rationaleMode: "paraphrase",
+    rationaleSources: ["scene", "definitions", "priorScenes"]
+  },
   scheduler: {
     mode: "manual",
     queueDir: ".queue",

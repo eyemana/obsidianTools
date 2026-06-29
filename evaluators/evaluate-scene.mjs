@@ -16,6 +16,15 @@ const __filename = fileURLToPath(import.meta.url);
 const evaluatorRoot = path.dirname(__filename);
 const toolRoot = path.join(evaluatorRoot, "..");
 const config = loadConfig(toolRoot);
+const awarenessConfig = config.awareness ?? {};
+const awarenessRationaleMode = ["off", "extractive", "paraphrase"].includes(
+  awarenessConfig.rationaleMode
+)
+  ? awarenessConfig.rationaleMode
+  : "paraphrase";
+const awarenessRationaleSources = Array.isArray(awarenessConfig.rationaleSources)
+  ? new Set(awarenessConfig.rationaleSources)
+  : new Set(["scene", "definitions", "priorScenes"]);
 
 const filePath = process.argv[2];
 const metricName = process.argv[3];
@@ -71,6 +80,164 @@ function isCharacterAwarenessMetric(metricName) {
 
 function isReaderAwarenessMetric(metricName) {
   return toCamelCase(metricName) === "readerAwareness";
+}
+
+function clampNumber(value, min, max, fallback = 0) {
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return fallback;
+  }
+
+  return Math.max(min, Math.min(max, number));
+}
+
+function normalizeWhitespace(value) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function isExactExcerpt(excerpt, sourceText) {
+  if (!excerpt || !sourceText) {
+    return false;
+  }
+
+  if (sourceText.includes(excerpt)) {
+    return true;
+  }
+
+  return normalizeWhitespace(sourceText).includes(normalizeWhitespace(excerpt));
+}
+
+function evidenceTextFromItem(item) {
+  if (typeof item === "string") {
+    return item;
+  }
+
+  if (item && typeof item === "object") {
+    return item.text ?? item.excerpt ?? "";
+  }
+
+  return "";
+}
+
+function normalizeEvidence(rawEvidence, sourceText) {
+  const items = Array.isArray(rawEvidence) ? rawEvidence : [];
+  const seen = new Set();
+  const evidence = [];
+
+  for (const item of items) {
+    const text = evidenceTextFromItem(item).trim();
+
+    if (!text || seen.has(text) || !isExactExcerpt(text, sourceText)) {
+      continue;
+    }
+
+    seen.add(text);
+    evidence.push(text);
+
+    if (evidence.length >= 3) {
+      break;
+    }
+  }
+
+  return evidence;
+}
+
+function awarenessSourceText(parts) {
+  return Object.entries(parts)
+    .filter(([name]) => awarenessRationaleSources.has(name))
+    .map(([, value]) => value)
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function awarenessSourceListText() {
+  const sourceLabels = {
+    scene: "current scene",
+    definitions: "supplied definitions",
+    priorScenes: "prior scene context"
+  };
+
+  return [...awarenessRationaleSources]
+    .map(source => sourceLabels[source] ?? source)
+    .join(", ");
+}
+
+function awarenessRationaleInstructions() {
+  if (awarenessRationaleMode === "off") {
+    return "Do not return rationale, evidence, belief, source, trajectory, truthStatus, labels, or explanatory prose.";
+  }
+
+  if (awarenessRationaleMode === "extractive") {
+    return `
+Do not return paraphrased rationale or explanatory prose.
+Return evidence as 0-3 exact excerpts copied from these allowed sources: ${awarenessSourceListText()}.
+Each evidence excerpt must use the author's own words exactly.
+Do not return belief, source, trajectory, truthStatus, labels, or invented categories.`;
+  }
+
+  return `
+Return rationale as one tight sentence supporting the numeric values.
+Do not return belief, source, trajectory, truthStatus, labels, or invented categories.`;
+}
+
+function awarenessJsonShape(targetConfig) {
+  return `{
+  "${targetConfig.key}": {
+    "${targetConfig.label}Name": ${awarenessEntryJsonShape()}
+  }
+}`;
+}
+
+function awarenessEntryJsonShape() {
+  const rationaleShape =
+    awarenessRationaleMode === "paraphrase"
+      ? `,
+      "rationale": "string"`
+      : "";
+  const evidenceShape =
+    awarenessRationaleMode === "extractive"
+      ? `,
+      "evidence": ["exact excerpt"]`
+      : "";
+
+  return `{
+  "delta": number,
+  "salience": number,
+  "confidence": number,
+  "alignment": number,
+  "evidenceStrength": number${rationaleShape}${evidenceShape}
+}`;
+}
+
+function normalizeAwarenessEntry(rawValue, sourceText) {
+  let rawObject = {};
+
+  if (typeof rawValue === "number") {
+    rawObject = { delta: rawValue };
+  } else if (rawValue && typeof rawValue === "object") {
+    rawObject = rawValue;
+  }
+
+  const normalized = {
+    delta: clampNumber(rawObject.delta, 0, 10),
+    salience: clampNumber(rawObject.salience, 0, 10),
+    confidence: clampNumber(rawObject.confidence, 0, 10),
+    alignment: clampNumber(rawObject.alignment, -10, 10),
+    evidenceStrength: clampNumber(rawObject.evidenceStrength, 0, 10)
+  };
+
+  if (awarenessRationaleMode === "paraphrase") {
+    normalized.rationale =
+      typeof rawObject.rationale === "string" ? rawObject.rationale : "";
+  } else if (awarenessRationaleMode === "extractive") {
+    normalized.evidence = normalizeEvidence(
+      rawObject.evidence ?? rawObject.excerpts,
+      sourceText
+    );
+  }
+
+  return normalized;
 }
 
 async function fetchJsonFromOllama(prompt) {
@@ -168,7 +335,7 @@ function normalizeSubjectRelationshipScoreMap(bucket, expectedNames, label, rawR
   return normalized;
 }
 
-function normalizeCharacterAwarenessMap(scores, plotThreadNames, characterNames) {
+function normalizeCharacterAwarenessMap(scores, plotThreadNames, characterNames, sourceText) {
   const normalized = {};
 
   const source =
@@ -197,6 +364,7 @@ function normalizeCharacterAwarenessMap(scores, plotThreadNames, characterNames)
           ? rawPlotThread[characterName]
           : undefined;
 
+<<<<<<< Updated upstream
       let delta = 0;
       let salience = 0;
       let confidence = 0;
@@ -239,6 +407,10 @@ function normalizeCharacterAwarenessMap(scores, plotThreadNames, characterNames)
         source: evidenceSource,
         rationale
       };
+=======
+      normalizedCharacters[characterName] =
+        normalizeAwarenessEntry(rawCharacter, sourceText);
+>>>>>>> Stashed changes
     }
 
     normalized[plotThreadName] = normalizedCharacters;
@@ -247,7 +419,7 @@ function normalizeCharacterAwarenessMap(scores, plotThreadNames, characterNames)
   return normalized;
 }
 
-function normalizeReaderAwarenessMap(scores, targetNames, label) {
+function normalizeReaderAwarenessMap(scores, targetNames, sourceText) {
   const normalized = {};
   const source =
     scores && typeof scores === "object"
@@ -267,6 +439,7 @@ function normalizeReaderAwarenessMap(scores, targetNames, label) {
   for (const targetName of targetNames) {
     const rawTarget = source[targetName];
 
+<<<<<<< Updated upstream
     let delta = 0;
     let salience = 0;
     let confidence = 0;
@@ -309,6 +482,9 @@ function normalizeReaderAwarenessMap(scores, targetNames, label) {
       source: evidenceSource,
       rationale
     };
+=======
+    normalized[targetName] = normalizeAwarenessEntry(rawTarget, sourceText);
+>>>>>>> Stashed changes
   }
 
   return normalized;
@@ -353,6 +529,10 @@ function getStoryOrder(scene) {
   };
 }
 
+function getChronologyOrder(scene) {
+  return numericFrontmatter(scene.data.chronology_order);
+}
+
 function compareStoryOrder(a, b) {
   if (a.storyOrder && b.storyOrder) {
     if (a.storyOrder.chapterOrder !== b.storyOrder.chapterOrder) {
@@ -371,6 +551,20 @@ function compareStoryOrder(a, b) {
   return a.fileName.localeCompare(b.fileName);
 }
 
+function compareChronologyOrder(a, b) {
+  if (a.chronologyOrder !== null && b.chronologyOrder !== null) {
+    if (a.chronologyOrder !== b.chronologyOrder) {
+      return a.chronologyOrder - b.chronologyOrder;
+    }
+  } else if (a.chronologyOrder !== null) {
+    return -1;
+  } else if (b.chronologyOrder !== null) {
+    return 1;
+  }
+
+  return compareStoryOrder(a, b);
+}
+
 function isPriorStoryScene(scene, currentOrder, currentName) {
   if (currentOrder === null) {
     return scene.fileName.localeCompare(currentName) < 0;
@@ -385,6 +579,22 @@ function isPriorStoryScene(scene, currentOrder, currentName) {
   }
 
   return scene.storyOrder.sceneOrder < currentOrder.sceneOrder;
+}
+
+function isPriorChronologyScene(scene, currentOrder, currentName) {
+  if (currentOrder === null) {
+    return false;
+  }
+
+  if (scene.chronologyOrder === null) {
+    return false;
+  }
+
+  if (scene.chronologyOrder !== currentOrder) {
+    return scene.chronologyOrder < currentOrder;
+  }
+
+  return scene.fileName.localeCompare(currentName) < 0;
 }
 
 function listPriorScenes(currentFilePath, currentScene) {
@@ -404,6 +614,7 @@ function listPriorScenes(currentFilePath, currentScene) {
         fileName: entry.name,
         name: scene.data.name ?? path.basename(entry.name, ".md"),
         storyOrder: getStoryOrder(scene),
+        chronologyOrder: getChronologyOrder(scene),
         readerKnowledge: scene.data.reader_knowledge ?? "",
         characters: scene.data.characters ?? [],
         plotThreads: scene.data.plotThreads ?? [],
@@ -413,6 +624,35 @@ function listPriorScenes(currentFilePath, currentScene) {
     })
     .filter(scene => isPriorStoryScene(scene, currentOrder, currentName))
     .sort(compareStoryOrder);
+}
+
+function listPriorChronologyScenes(currentFilePath, currentScene) {
+  const scenesFolder = path.dirname(currentFilePath);
+  const currentOrder = getChronologyOrder(currentScene);
+  const currentName = path.basename(currentFilePath);
+
+  return fs.readdirSync(scenesFolder, { withFileTypes: true })
+    .filter(entry => entry.isFile())
+    .filter(entry => entry.name.endsWith(".md"))
+    .filter(entry => entry.name !== currentName)
+    .map(entry => {
+      const scenePath = path.join(scenesFolder, entry.name);
+      const scene = matter(fs.readFileSync(scenePath, "utf8"));
+
+      return {
+        fileName: entry.name,
+        name: scene.data.name ?? path.basename(entry.name, ".md"),
+        storyOrder: getStoryOrder(scene),
+        chronologyOrder: getChronologyOrder(scene),
+        readerKnowledge: scene.data.reader_knowledge ?? "",
+        characters: scene.data.characters ?? [],
+        plotThreads: scene.data.plotThreads ?? [],
+        arcs: scene.data.arcs ?? [],
+        content: scene.content.trim()
+      };
+    })
+    .filter(scene => isPriorChronologyScene(scene, currentOrder, currentName))
+    .sort(compareChronologyOrder);
 }
 
 function formatPriorSceneContext(scenes) {
@@ -428,6 +668,27 @@ Story order: ${
     : "unknown"
 }
 Reader knowledge marker: ${scene.readerKnowledge || "unspecified"}
+Characters: ${JSON.stringify(scene.characters)}
+Plot threads: ${JSON.stringify(scene.plotThreads)}
+Arcs: ${JSON.stringify(scene.arcs)}
+Text:
+${scene.content}`;
+  }).join("\n\n---\n\n");
+}
+
+function formatPriorChronologyContext(scenes) {
+  if (scenes.length === 0) {
+    return "No prior chronology context is available. Treat character-facing information in this scene as newly available only if the character can plausibly learn it in this scene.";
+  }
+
+  return scenes.map(scene => {
+    return `Scene: ${scene.name}
+Chronology order: ${scene.chronologyOrder ?? "unknown"}
+Story order: ${
+  scene.storyOrder
+    ? `${scene.storyOrder.chapterOrder}.${scene.storyOrder.sceneOrder}`
+    : "unknown"
+}
 Characters: ${JSON.stringify(scene.characters)}
 Plot threads: ${JSON.stringify(scene.plotThreads)}
 Arcs: ${JSON.stringify(scene.arcs)}
@@ -539,7 +800,13 @@ async function evaluateStandardMetric(metricName, targetName) {
   parsed.data.ai[metricKey].updated = new Date().toISOString();
 }
 
-function buildCharacterAwarenessPrompt(characterNames, plotThreadNames, characterDefinitions, plotThreadDefinitions) {
+function buildCharacterAwarenessPrompt(
+  characterNames,
+  plotThreadNames,
+  characterDefinitions,
+  plotThreadDefinitions,
+  priorChronologyContext
+) {
   return `
 Return JSON only.
 Return compact valid JSON.
@@ -565,6 +832,10 @@ Do not omit listed characters or plot threads.
 Character awareness means how much NEW information a character gains during this scene about a plot thread.
 
 Score delta from 0-10.
+Score salience from 0-10.
+Score confidence from 0-10.
+Score alignment from -10 to 10.
+Score evidenceStrength from 0-10.
 
 0 = the character gains no new information about the plot thread in this scene.
 1-3 = the character gains minor or indirect information.
@@ -572,13 +843,21 @@ Score delta from 0-10.
 7-9 = the character gains major new understanding.
 10 = the character receives a decisive revelation.
 
+salience = how present or noticeable the plot thread is to the character in this scene.
+confidence = how certain the character seems about what they know or infer.
+alignment = how aligned the character's apparent understanding is with the supplied definitions and scene evidence. Use 0 if there is no reliable basis.
+evidenceStrength = how much support the supplied text gives for these scores.
+
 This is a delta, not cumulative awareness.
+Compare this scene to the prior chronology context, and score only information newly available to the character in this scene.
+Do not assume a character knows a prior chronological scene unless the character was present in that scene or the supplied text gives the character plausible access to that information.
 Do not score scene relevance.
 Do not score reader awareness.
 Do not score plot importance.
 Only score what each character plausibly learns during this scene.
 If a character is not present or cannot plausibly learn the information, use delta 0.
 
+<<<<<<< Updated upstream
 Also evaluate awareness dimensions:
 - salience: 0-10, how present this plot thread is in the character's mind after this scene.
 - confidence: 0-10, how strongly the character likely believes their current understanding of this plot thread.
@@ -593,12 +872,18 @@ Use "confused" or truthStatus "ambiguous" when the character's understanding bec
 Use correctness 0-3 for false or badly misleading beliefs, 4-6 for partial or uncertain beliefs, and 7-10 for mostly accurate beliefs.
 Use confidence independently from correctness; a character can be highly confident and wrong.
 Each rationale must be a single sentence supporting the delta and dimensions.
+=======
+${awarenessRationaleInstructions()}
+>>>>>>> Stashed changes
 
 Use these character definitions:
 ${characterDefinitions}
 
 Use these plot thread definitions:
 ${plotThreadDefinitions}
+
+Prior chronology context for comparison:
+${priorChronologyContext}
 
 Scene:
 
@@ -608,6 +893,7 @@ Required JSON:
 {
   "plotThreads": {
     "plotThreadName": {
+<<<<<<< Updated upstream
       "characterName": {
         "delta": number,
         "salience": number,
@@ -619,6 +905,9 @@ Required JSON:
         "source": "string",
         "rationale": "string"
       }
+=======
+      "characterName": ${awarenessEntryJsonShape()}
+>>>>>>> Stashed changes
     }
   }
 }
@@ -657,14 +946,19 @@ async function evaluateCharacterAwareness(targetName) {
     plotThreads = normalizeCharacterAwarenessMap(
       {},
       plotThreadNames,
-      characterNames
+      characterNames,
+      awarenessSourceText({ scene: parsed.content })
     );
   } else {
+    const priorChronologyContext = formatPriorChronologyContext(
+      listPriorChronologyScenes(filePath, parsed)
+    );
     const prompt = buildCharacterAwarenessPrompt(
       characterNames,
       plotThreadNames,
       characterDefinitions,
-      plotThreadDefinitions
+      plotThreadDefinitions,
+      priorChronologyContext
     );
 
     const { parsedResponse: scores } = await fetchJsonFromOllama(prompt);
@@ -672,7 +966,15 @@ async function evaluateCharacterAwareness(targetName) {
     plotThreads = normalizeCharacterAwarenessMap(
       scores.plotThreads,
       plotThreadNames,
-      characterNames
+      characterNames,
+      awarenessSourceText({
+        scene: parsed.content,
+        definitions: [
+          characterDefinitions,
+          plotThreadDefinitions
+        ].join("\n\n"),
+        priorScenes: priorChronologyContext
+      })
     );
   }
 
@@ -770,12 +1072,21 @@ Do not omit listed ${targetConfig.pluralLabel}.
 ${guidance.meaning}
 
 Score delta from 0-10.
+Score salience from 0-10.
+Score confidence from 0-10.
+Score alignment from -10 to 10.
+Score evidenceStrength from 0-10.
 
 0 = the reader gains no new awareness for this ${targetConfig.label} in this scene.
 ${guidance.low}
 ${guidance.medium}
 ${guidance.high}
 ${guidance.decisive}
+
+salience = how present or noticeable this ${targetConfig.label} is to the reader in this scene.
+confidence = how certain the reader is likely to feel about what they know or infer.
+alignment = how aligned the reader's likely understanding is with the supplied definitions, prior context, and scene evidence. Use 0 if there is no reliable basis.
+evidenceStrength = how much support the supplied text gives for these scores.
 
 This is a delta, not cumulative awareness.
 Compare this scene to the prior scene context, and score only information newly available to the reader in this scene.
@@ -785,6 +1096,7 @@ Do not score what characters know; this is reader-facing awareness only.
 Do not score scene relevance.
 ${guidance.cautions.join("\n")}
 
+<<<<<<< Updated upstream
 Also evaluate awareness dimensions:
 - salience: 0-10, how present this ${targetConfig.label} is in the reader's mind after this scene.
 - confidence: 0-10, how strongly the reader is likely to believe their current understanding of this ${targetConfig.label}.
@@ -799,6 +1111,9 @@ Use "confused" or truthStatus "ambiguous" when the scene intentionally muddies t
 Use correctness 0-3 for false or badly misleading beliefs, 4-6 for partial or uncertain beliefs, and 7-10 for mostly accurate beliefs.
 Use confidence independently from correctness; the reader can be highly confident and wrong.
 Each rationale must be a single sentence supporting the delta and dimensions.
+=======
+${awarenessRationaleInstructions()}
+>>>>>>> Stashed changes
 
 Use these ${targetConfig.pluralLabel} definitions:
 ${targetDefinitions}
@@ -814,6 +1129,7 @@ Current scene:
 ${parsed.content}
 
 Required JSON:
+<<<<<<< Updated upstream
 {
   "${targetConfig.key}": {
     "${targetConfig.label}Name": {
@@ -829,6 +1145,9 @@ Required JSON:
     }
   }
 }
+=======
+${awarenessJsonShape(targetConfig)}
+>>>>>>> Stashed changes
 `;
 }
 
@@ -857,7 +1176,7 @@ async function evaluateReaderAwareness(targetName) {
     targetScores = normalizeReaderAwarenessMap(
       {},
       targetNames,
-      targetConfig.label
+      awarenessSourceText({ scene: parsed.content })
     );
   } else {
     const priorSceneContext = formatPriorSceneContext(
@@ -875,7 +1194,11 @@ async function evaluateReaderAwareness(targetName) {
     targetScores = normalizeReaderAwarenessMap(
       scores[targetConfig.key],
       targetNames,
-      targetConfig.label
+      awarenessSourceText({
+        scene: parsed.content,
+        definitions: targetDefinitions,
+        priorScenes: priorSceneContext
+      })
     );
   }
 

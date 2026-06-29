@@ -7,6 +7,18 @@
   // Example options depend on what is installed locally: "qwen2.5:7b", "llama3.1:8b", etc.
   "model": "qwen2.5:7b",
 
+  "awareness": {
+    // Controls whether awareness evaluators store generated rationale text.
+    // "off": store only bounded numeric fields.
+    // "extractive": store only exact evidence excerpts copied from supplied notes/scenes/definitions.
+    // "paraphrase": store one tight model-written rationale sentence.
+    "rationaleMode": "paraphrase",
+
+    // Source buckets allowed for extractive evidence validation.
+    // Available values: "scene", "definitions", "priorScenes".
+    "rationaleSources": ["scene", "definitions", "priorScenes"]
+  },
+
   "scheduler": {
     // How jobs are picked up after Templater queues them.
     // "manual": Templater queues a job and starts a worker that drains the queue, then exits.

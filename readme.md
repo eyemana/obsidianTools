@@ -50,6 +50,7 @@ name: Inventory Day
 type: Scene
 chapter_order: 1
 scene_order: 1
+chronology_order: 10
 pov: Mara Bell
 characters:
   - Mara Bell
@@ -62,13 +63,17 @@ arcs:
 ---
 ```
 
-`chapter_order` and `scene_order` are writer-authored structure fields. They are not AI-generated and do not belong under `ai`.
+`chapter_order`, `scene_order`, and `chronology_order` are writer-authored structure fields. They are not AI-generated and do not belong under `ai`.
 
 - `chapter_order`: the chapter's position in the book/story, and the field Storyboard uses to group scenes into chapter blocks.
 - `scene_order`: the scene's position inside that chapter.
+- `chronology_order`: the scene's position in story-world chronology. It can be any number, including negative values and decimals, so you can place scenes arbitrarily far in the past or future and insert scenes between existing chronology points.
 - `chapter`: optional label/title metadata if you want it later; Storyboard does not require it for grouping.
 
 Storyboard writes `chapter_order` and `scene_order` when you rearrange tiles and click `Save Order`.
+Storyboard metadata editing can write `chronology_order`, but drag-and-drop reordering does not change chronology.
+If a scene has no `chronology_order`, Character Awareness does not infer prior chronology from file name or presentation order.
+Storyboard metadata editing prevents two scenes in the same `chapter_order` from sharing the same `scene_order`.
 
 ## Storyboard
 
@@ -100,7 +105,7 @@ Scene tiles show their order badge as:
 chapter_order.scene_order
 ```
 
-Hovering or focusing a scene shows a larger card with Reader Awareness deltas, cumulative totals, and rationales.
+Hovering or focusing a scene shows a larger card with Reader Awareness deltas, cumulative totals, bounded awareness axes, and any configured rationale or evidence.
 
 Click a scene to open the scene detail pane. Double-click a scene to open the note.
 
@@ -138,7 +143,11 @@ If `storyboardReaderAwarenessAfterReorder` is set to `ask` or `auto`, Storyboard
 
 ## Reader Awareness
 
+<<<<<<< Updated upstream
 Reader Awareness keeps `delta` as the headline score, but also captures dimensions for misdirection, confidence, and wrong-track awareness.
+=======
+Reader Awareness is a delta score, not an absolute score. It also stores bounded numeric axes that can apply across story and non-story contexts.
+>>>>>>> Stashed changes
 
 For each scene, the evaluator asks: what does the reader newly learn in this scene, compared to prior scenes?
 
@@ -158,6 +167,7 @@ ai:
         delta: 7
         salience: 8
         confidence: 6
+<<<<<<< Updated upstream
         correctness: 4
         trajectory: misdirected
         truthStatus: misleading
@@ -175,6 +185,20 @@ Storyboard calculates cumulative totals by summing deltas in story order. If you
 Character Awareness keeps `delta` as the headline score, but also captures what the character likely believes and whether that belief is correct.
 
 For each scene, the evaluator asks: what does each listed character plausibly learn about each listed plot thread during this scene?
+=======
+        alignment: -4
+        evidenceStrength: 7
+        rationale: The scene gives the reader a visible but incomplete ledger clue.
+```
+
+`delta` is the cumulative chart input. `salience` is how present the target is to the reader. `confidence` is how certain the reader is likely to feel about what they know or infer. `alignment` is how aligned the reader's likely understanding is with the supplied definitions, prior context, and scene evidence. `evidenceStrength` is how much support the supplied text gives for the scores.
+
+Storyboard calculates cumulative totals by summing deltas in story order. If you change order, rerun Reader Awareness so each scene's delta and bounded axes are calculated against the correct prior context.
+
+## Character Awareness
+
+Character Awareness uses the same bounded numeric axes as Reader Awareness, but it evaluates what each character plausibly learns in story chronology rather than what the reader learns in presentation order. The evaluator compares the current scene against prior scenes by `chronology_order`, not by `chapter_order` and `scene_order`.
+>>>>>>> Stashed changes
 
 Scores are stored under scene frontmatter:
 
@@ -187,6 +211,7 @@ ai:
           delta: 5
           salience: 7
           confidence: 6
+<<<<<<< Updated upstream
           correctness: 4
           trajectory: misdirected
           truthStatus: misleading
@@ -196,6 +221,32 @@ ai:
 ```
 
 `delta` is the cumulative chart input. `salience` is how present the plot thread is in the character's mind after the scene. `confidence` is how strongly the character likely believes their current interpretation. `correctness` is how aligned that belief is with story truth. `trajectory` and `truthStatus` capture whether the scene introduced, reinforced, corrected, confused, or misdirected the character's awareness.
+=======
+          alignment: -3
+          evidenceStrength: 6
+          rationale: Mara notices the missing ledger but has limited support for what happened to it.
+```
+
+`delta` is the cumulative chart input. `salience` is how present the plot thread is to the character. `confidence` is how certain the character seems about what they know or infer. `alignment` is how aligned the character's apparent understanding is with the supplied definitions and scene evidence. `evidenceStrength` is how much support the supplied text gives for the scores.
+
+## Awareness Rationale Modes
+
+Awareness evaluators can store different rationale payloads through `config.local.json` or `config.example.json`:
+
+```json
+"awareness": {
+  "rationaleMode": "extractive"
+}
+```
+
+Modes:
+
+- `off`: store only bounded numeric fields.
+- `extractive`: store only exact evidence excerpts copied from supplied scenes, notes, prior scene context, or definitions.
+- `paraphrase`: store one tight model-written rationale sentence.
+
+Use `extractive` when you want the evaluator to avoid adding interpretive language. The normalizer drops evidence excerpts that do not appear in the supplied source text.
+>>>>>>> Stashed changes
 
 ## Reports
 
