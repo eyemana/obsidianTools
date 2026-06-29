@@ -16,7 +16,12 @@ export const defaultConfig = {
       "Segments/Tech Tips/Obsidian/POC/Arcs",
       "Segments/Tech Tips/Obsidian/POC/Scenes"
     ],
-    outputPath: ".index/truth-ledger.json"
+    outputPath: ".index/truth-ledger.json",
+    inference: {
+      enabled: true,
+      maxClaimsPerNote: 5,
+      minConfidence: 6
+    }
   },
   scheduler: {
     mode: "manual",

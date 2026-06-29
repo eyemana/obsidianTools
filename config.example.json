@@ -32,7 +32,20 @@
 
     // Generated JSON index used by evaluators and reports.
     // Relative paths are resolved from the obsidianTools folder.
-    "outputPath": ".index/truth-ledger.json"
+    "outputPath": ".index/truth-ledger.json",
+
+    "inference": {
+      // When enabled, the collector asks the local LLM to infer lower-authority
+      // reader-like claims from scanned notes. These are written separately from
+      // author claims as inferredClaims and are not shown in the Truth Ledger report.
+      "enabled": true,
+
+      // Per-note cap for inferred claims.
+      "maxClaimsPerNote": 5,
+
+      // 0-10 minimum confidence required to keep an inferred claim.
+      "minConfidence": 6
+    }
   },
 
   "scheduler": {
@@ -45,7 +58,8 @@
     // Relative paths are resolved from the obsidianTools folder; absolute paths are allowed.
     "queueDir": ".queue",
 
-    // Delay between evaluator calls. Increase this if Ollama or the machine is overloaded.
+    // Delay between evaluator calls and Truth Ledger note crawls.
+    // Increase this if Ollama or the machine is overloaded.
     // Lower values run faster but put more pressure on local resources.
     "throttleMs": 1000,
 

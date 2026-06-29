@@ -1,6 +1,8 @@
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import { fileURLToPath } from "url";
+import matter from "gray-matter";
 
 import { loadConfig } from "../tool-config.mjs";
 
@@ -62,11 +64,24 @@ function readOption(name) {
   return process.argv[index + 1] ?? null;
 }
 
+function readOptions(name) {
+  const values = [];
+
+  for (let index = 0; index < process.argv.length; index++) {
+    if (process.argv[index] === name && process.argv[index + 1]) {
+      values.push(process.argv[index + 1]);
+      index++;
+    }
+  }
+
+  return values;
+}
+
 function usage() {
   return [
-    "Usage: node truth/collect-truth-ledger.mjs [--vault-root <path>] [--output <path>] [--json]",
+    "Usage: node truth/collect-truth-ledger.mjs [--vault-root <path>] [--file <path> ...] [--output <path>] [--json] [--infer|--no-infer]",
     "",
-    "Collects author-written [!claim] callouts into the configured truth ledger index."
+    "Collects author-written [!claim] callouts and optional lower-authority inferred claims into the configured truth ledger index."
   ].join("\n");
 }
 
@@ -141,6 +156,87 @@ function normalizeTruthValue(value) {
   return allowedTruthValues.has(normalized) ? normalized : "";
 }
 
+function clampNumber(value, min, max, fallback = 0) {
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return fallback;
+  }
+
+  return Math.max(min, Math.min(max, number));
+}
+
+function normalizeWhitespace(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function isExactExcerpt(excerpt, sourceText) {
+  if (!excerpt || !sourceText) {
+    return false;
+  }
+
+  if (sourceText.includes(excerpt)) {
+    return true;
+  }
+
+  return normalizeWhitespace(sourceText).includes(normalizeWhitespace(excerpt));
+}
+
+function normalizeEvidence(rawEvidence, sourceText) {
+  const evidence = [];
+  const seen = new Set();
+  const items = Array.isArray(rawEvidence) ? rawEvidence : [];
+
+  for (const item of items) {
+    const text = typeof item === "string"
+      ? item.trim()
+      : String(item?.text ?? item?.excerpt ?? "").trim();
+
+    if (!text || seen.has(text) || !isExactExcerpt(text, sourceText)) {
+      continue;
+    }
+
+    seen.add(text);
+    evidence.push(text);
+
+    if (evidence.length >= 3) {
+      break;
+    }
+  }
+
+  return evidence;
+}
+
+function lineForExcerpt(sourceText, excerpt) {
+  if (!excerpt) {
+    return 1;
+  }
+
+  const index = sourceText.indexOf(excerpt);
+
+  if (index === -1) {
+    return 1;
+  }
+
+  return sourceText.slice(0, index).split(/\r?\n/).length;
+}
+
+function slugify(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "claim";
+}
+
+function hashText(value) {
+  return crypto
+    .createHash("sha1")
+    .update(String(value ?? ""))
+    .digest("hex")
+    .slice(0, 10);
+}
+
 function parseClaimBlock(block, filePath, relativePath) {
   const fields = {};
   const statementLines = [];
@@ -181,6 +277,7 @@ function parseClaimBlock(block, filePath, relativePath) {
 
   return {
     id: fields.id ?? "",
+    authority: "author",
     truth,
     subject: fields.subject ?? "",
     statement,
@@ -230,6 +327,168 @@ function extractClaimBlocks(filePath, vaultRoot) {
   }
 
   return blocks;
+}
+
+function markdownBody(filePath) {
+  const raw = fs.readFileSync(filePath, "utf8");
+  return matter(raw).content.trim();
+}
+
+async function fetchJsonFromOllama(prompt) {
+  const response = await fetch(config.ollamaUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: config.model,
+      format: "json",
+      prompt,
+      stream: false,
+      options: {
+        temperature: 0
+      }
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Ollama returned HTTP ${response.status}`);
+  }
+
+  const result = await response.json();
+
+  try {
+    return JSON.parse(result.response);
+  } catch {
+    throw new Error(`Invalid JSON response: ${result.response}`);
+  }
+}
+
+function buildInferencePrompt(relativePath, content, inferenceConfig) {
+  return `
+Return JSON only.
+Return compact valid JSON.
+Do not include markdown.
+Do not include trailing commas.
+
+You are collecting lower-authority inferred truth claims from an author's note.
+These inferred claims are not authorial canon.
+Infer only claims a careful average reader could reasonably believe from this exact note.
+Do not invent new story ideas.
+Do not add creative suggestions.
+Do not infer beyond the supplied note.
+Prefer fewer claims over speculative claims.
+
+Return at most ${inferenceConfig.maxClaimsPerNote} claims.
+
+Allowed truth values:
+${JSON.stringify([...allowedTruthValues])}
+
+Each evidence item must be an exact excerpt copied from the note.
+
+Note path:
+${relativePath}
+
+Note:
+${content}
+
+Required JSON:
+{
+  "claims": [
+    {
+      "statement": "claim text",
+      "truth": "true|false|partial|ambiguous|unknown",
+      "subject": "short subject",
+      "confidence": number,
+      "plotThreads": ["name"],
+      "characters": ["name"],
+      "storyEngines": ["name"],
+      "arcs": ["name"],
+      "locations": ["name"],
+      "evidence": ["exact excerpt"]
+    }
+  ]
+}
+`;
+}
+
+function normalizeInferredClaim(rawClaim, filePath, relativePath, content, index) {
+  if (!rawClaim || typeof rawClaim !== "object") {
+    return null;
+  }
+
+  const statement = String(rawClaim.statement ?? "").trim();
+  const truth = normalizeTruthValue(rawClaim.truth);
+  const confidence = clampNumber(rawClaim.confidence, 0, 10);
+  const evidence = normalizeEvidence(rawClaim.evidence, content);
+
+  if (!statement || !truth || evidence.length === 0) {
+    return null;
+  }
+
+  const subject = String(rawClaim.subject ?? "").trim();
+  const line = lineForExcerpt(content, evidence[0]);
+
+  return {
+    id: `inferred.${slugify(relativePath)}.${hashText(`${statement}:${index}`)}`,
+    authority: "inferred",
+    truth,
+    subject,
+    statement,
+    confidence,
+    plotThreads: Array.isArray(rawClaim.plotThreads) ? rawClaim.plotThreads.filter(Boolean) : [],
+    characters: Array.isArray(rawClaim.characters) ? rawClaim.characters.filter(Boolean) : [],
+    storyEngines: Array.isArray(rawClaim.storyEngines) ? rawClaim.storyEngines.filter(Boolean) : [],
+    arcs: Array.isArray(rawClaim.arcs) ? rawClaim.arcs.filter(Boolean) : [],
+    locations: Array.isArray(rawClaim.locations) ? rawClaim.locations.filter(Boolean) : [],
+    subjects: [],
+    tags: [],
+    evidence,
+    source: {
+      path: relativePath,
+      absolutePath: filePath,
+      line
+    }
+  };
+}
+
+async function inferClaimsFromFile(filePath, vaultRoot, inferenceConfig) {
+  const content = markdownBody(filePath);
+
+  if (!content) {
+    return [];
+  }
+
+  const relativePath = path.relative(vaultRoot, filePath);
+  const response = await fetchJsonFromOllama(
+    buildInferencePrompt(relativePath, content, inferenceConfig)
+  );
+  const rawClaims = Array.isArray(response.claims) ? response.claims : [];
+
+  return rawClaims
+    .map((rawClaim, index) =>
+      normalizeInferredClaim(rawClaim, filePath, relativePath, content, index)
+    )
+    .filter(Boolean)
+    .filter(claim => claim.confidence >= inferenceConfig.minConfidence);
+}
+
+async function inferClaims(files, vaultRoot, inferenceConfig, warnings) {
+  const inferredClaims = [];
+
+  for (const filePath of files) {
+    try {
+      inferredClaims.push(
+        ...(await inferClaimsFromFile(filePath, vaultRoot, inferenceConfig))
+      );
+    } catch (error) {
+      warnings.push(
+        `Could not infer claims from ${path.relative(vaultRoot, filePath)}: ${error.message}`
+      );
+    }
+  }
+
+  return inferredClaims.sort(sortClaims);
 }
 
 function validateClaims(claims, scannedPaths) {
@@ -291,7 +550,7 @@ function writeJsonAtomic(targetPath, value) {
   fs.renameSync(tempPath, targetPath);
 }
 
-function main() {
+async function main() {
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
     console.log(usage());
     return;
@@ -307,18 +566,48 @@ function main() {
   const configuredPaths = Array.isArray(truthConfig.paths)
     ? truthConfig.paths
     : [];
+  const explicitFiles = [...new Set(
+    readOptions("--file")
+      .map(filePath => resolvePath(vaultRoot, filePath))
+      .filter(Boolean)
+      .filter(filePath => filePath.endsWith(".md"))
+  )].sort();
+  const inferenceConfig = {
+    enabled: truthConfig.inference?.enabled !== false,
+    maxClaimsPerNote: Math.max(0, Number(truthConfig.inference?.maxClaimsPerNote) || 5),
+    minConfidence: clampNumber(truthConfig.inference?.minConfidence, 0, 10, 6)
+  };
+
+  if (process.argv.includes("--infer")) {
+    inferenceConfig.enabled = true;
+  }
+
+  if (process.argv.includes("--no-infer")) {
+    inferenceConfig.enabled = false;
+  }
+
   const scanRoots = configuredPaths.map(scanPath => resolvePath(vaultRoot, scanPath));
-  const files = [...new Set(scanRoots.flatMap(walkMarkdownFiles))].sort();
+  const files = explicitFiles.length > 0
+    ? explicitFiles
+    : [...new Set(scanRoots.flatMap(walkMarkdownFiles))].sort();
   const claims = files
     .flatMap(filePath => extractClaimBlocks(filePath, vaultRoot))
     .sort(sortClaims);
-  const { errors, warnings } = validateClaims(claims, scanRoots);
+  const { errors, warnings } = validateClaims(
+    claims,
+    explicitFiles.length > 0 ? explicitFiles : scanRoots
+  );
+  const inferredClaims = errors.length === 0 && inferenceConfig.enabled
+    ? await inferClaims(files, vaultRoot, inferenceConfig, warnings)
+    : [];
   const index = {
     generatedAt: new Date().toISOString(),
     vaultRoot,
     outputPath,
     claimCount: claims.length,
+    inferredClaimCount: inferredClaims.length,
     claims,
+    inferredClaims,
     warnings,
     errors
   };
@@ -350,4 +639,7 @@ function main() {
   }
 }
 
-main();
+main().catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});
