@@ -256,6 +256,8 @@ Simple report categories:
 - `Character Awareness of Plot Thread by Scene`: what characters newly learn about plot threads.
 - `Reader Awareness of Character/Plot Thread/Arc by Scene`: what the reader newly learns, shown as scene deltas and cumulative totals.
 - `Truth Ledger`: collected author-written claims from configured notes.
+- `Goal Bullseye`: radar view of average goal achievement across metric families.
+- `Goal Heatmap`: scene-by-scene heatmap of goal achievement and lowest-scoring areas.
 - `Storyboard`: the interactive planning surface for ordering scenes and chapters.
 
 If a report is empty:
