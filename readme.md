@@ -11,7 +11,7 @@ From Obsidian, use these Templater templates:
 - `Templates/Batch-Evaluate-Scenes.md`: queue the full scene evaluation batch.
 - `Templates/Analyze-Current-Scene.md`: queue the full configured analysis for only the active scene.
 - `Templates/Queue-Reader-Awareness.md`: rerun only Reader Awareness after changing scene order.
-- `Templates/Collect-Truth-Ledger.md`: collect author-written claim callouts into the generated Truth Ledger index.
+- `Templates/Collect-Truth-Ledger.md`: queue a throttled Truth Ledger crawl.
 - `Templates/Start-Scheduler.md`: start a background scheduler worker.
 - `Templates/Stop-Scheduler.md`: stop the background scheduler worker.
 - `Templates/Cancel-Batch-Evaluation.md`: cancel the latest queued or running job.
@@ -215,10 +215,16 @@ Use `extractive` when you want the evaluator to avoid adding interpretive langua
 
 ## Truth Ledger
 
-The Truth Ledger is author-authored and collector-generated. You write claims wherever they naturally belong, then run `Templates/Collect-Truth-Ledger.md` or:
+The Truth Ledger has two lanes:
+
+- **Authored claims**: hard, author-owned claim callouts that you write wherever they naturally belong.
+- **Inferred claims**: lower-authority reader-like claims inferred by the local LLM from scanned notes. These are generated for evaluator grounding and are not shown in the Truth Ledger report by default.
+
+Run `Templates/Collect-Truth-Ledger.md` or:
 
 ```sh
-node truth/collect-truth-ledger.mjs
+node scheduler/enqueue-truth-ledger.mjs
+node scheduler/worker.mjs --drain
 ```
 
 Claim blocks use Obsidian callout syntax:
@@ -239,7 +245,7 @@ Supported `truth` values:
 - `ambiguous`
 - `unknown`
 
-The collector scans configured folders, validates claim IDs and truth values, and writes the generated index to `obsidianTools/.index/truth-ledger.json`. The generated file is not meant to be hand-edited. Open `Segments/Tech Tips/Obsidian/POC/Reports/Truth Ledger.md` to review the collected claims in Obsidian.
+The scheduled crawl scans configured folders one note at a time, using `scheduler.throttleMs` between notes. Each note pass validates authored claim IDs and truth values and asks the local LLM for inferred claims when `truthLedger.inference.enabled` is true. The worker merges those results and writes the generated index to `obsidianTools/.index/truth-ledger.json`. The generated file is not meant to be hand-edited. Open `Segments/Tech Tips/Obsidian/POC/Reports/Truth Ledger.md` to review authored claims in Obsidian.
 
 ## Reports
 
@@ -255,7 +261,13 @@ Simple report categories:
 - `Arc Relevance/Tension by Scene`: how scenes support or pressure arcs.
 - `Character Awareness of Plot Thread by Scene`: what characters newly learn about plot threads.
 - `Reader Awareness of Character/Plot Thread/Arc by Scene`: what the reader newly learns, shown as scene deltas and cumulative totals.
+<<<<<<< Updated upstream
 - `Truth Ledger`: collected author-written claims from configured notes.
+=======
+- `Truth Ledger`: collected author-written claims from configured notes. Inferred claims are generated into JSON for evaluator use but hidden from this report by default.
+- `Goal Bullseye`: radar view of average goal achievement across metric families.
+- `Goal Heatmap`: scene-by-scene heatmap of goal achievement and lowest-scoring areas.
+>>>>>>> Stashed changes
 - `Storyboard`: the interactive planning surface for ordering scenes and chapters.
 
 If a report is empty:

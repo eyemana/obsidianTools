@@ -103,6 +103,42 @@ export function enqueueEvaluateScenesJob({
   };
 }
 
+export function enqueueTruthLedgerJob({
+  toolRoot,
+  vaultRoot,
+  source = "manual",
+  label = "Truth Ledger Crawl",
+  infer = true
+}) {
+  const schedulerConfig = getSchedulerConfig(toolRoot);
+  const paths = getQueuePaths(toolRoot, schedulerConfig);
+  ensureQueueDirs(paths);
+
+  const now = new Date().toISOString();
+  const id = makeJobId();
+  const job = {
+    version: 1,
+    id,
+    type: "truth-ledger",
+    status: "queued",
+    label,
+    createdAt: now,
+    updatedAt: now,
+    source,
+    vaultRoot: vaultRoot ? path.resolve(vaultRoot) : path.resolve(toolRoot, ".."),
+    infer
+  };
+
+  const jobPath = path.join(paths.jobsDir, `${id}.queued.json`);
+  writeJsonAtomic(jobPath, job);
+
+  return {
+    id,
+    jobPath,
+    logPath: path.join(paths.logsDir, `${id}.log`)
+  };
+}
+
 export function readJob(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }

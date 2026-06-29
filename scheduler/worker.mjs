@@ -3,7 +3,7 @@ import path from "path";
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 
-import { getSchedulerConfig } from "../tool-config.mjs";
+import { getSchedulerConfig, loadConfig } from "../tool-config.mjs";
 import {
   claimJob,
   ensureQueueDirs,
@@ -20,6 +20,7 @@ const __filename = fileURLToPath(import.meta.url);
 const schedulerRoot = path.dirname(__filename);
 const toolRoot = path.join(schedulerRoot, "..");
 const evaluatorPath = path.join(toolRoot, "evaluators", "evaluate-scene.mjs");
+const truthCollectorPath = path.join(toolRoot, "truth", "collect-truth-ledger.mjs");
 
 class JobCanceledError extends Error {
   constructor(message = "Job canceled.") {
@@ -168,6 +169,74 @@ async function runEvaluator(filePath, metric, target, logPath, paths, jobId) {
   });
 }
 
+async function runTruthCollector(args, logPath, paths, jobId) {
+  return new Promise((resolve) => {
+    let canceled = false;
+    let stdout = "";
+    let stderr = "";
+    const child = spawn(
+      process.execPath,
+      [
+        truthCollectorPath,
+        ...args
+      ],
+      {
+        cwd: toolRoot,
+        windowsHide: true
+      }
+    );
+
+    const cancelTimer = setInterval(() => {
+      if (!isCancelRequested(paths, jobId)) {
+        return;
+      }
+
+      canceled = true;
+      child.kill();
+    }, 1000);
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", (error) => {
+      clearInterval(cancelTimer);
+      appendLog(logPath, `${error.stack ?? error.message}\n`);
+      resolve({
+        ok: false,
+        canceled,
+        code: null,
+        stdout,
+        stderr,
+        error
+      });
+    });
+
+    child.on("close", (code) => {
+      clearInterval(cancelTimer);
+
+      if (stderr.trim()) {
+        appendLog(logPath, stderr);
+        if (!stderr.endsWith("\n")) {
+          appendLog(logPath, "\n");
+        }
+      }
+
+      resolve({
+        ok: code === 0,
+        canceled,
+        code,
+        stdout,
+        stderr,
+        error: null
+      });
+    });
+  });
+}
+
 function listSceneFiles(scenesFolder) {
   return fs.readdirSync(scenesFolder, { withFileTypes: true })
     .filter((entry) => entry.isFile())
@@ -186,6 +255,90 @@ function getJobSceneFiles(job) {
   }
 
   return listSceneFiles(job.scenesFolder);
+}
+
+function resolvePath(root, candidate) {
+  if (!candidate) {
+    return null;
+  }
+
+  return path.isAbsolute(candidate)
+    ? candidate
+    : path.resolve(root, candidate);
+}
+
+function walkMarkdownFiles(root) {
+  if (!root || !fs.existsSync(root)) {
+    return [];
+  }
+
+  if (fs.statSync(root).isFile()) {
+    return root.endsWith(".md") ? [root] : [];
+  }
+
+  const files = [];
+  const entries = fs.readdirSync(root, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) {
+      continue;
+    }
+
+    const entryPath = path.join(root, entry.name);
+
+    if (entry.isDirectory()) {
+      files.push(...walkMarkdownFiles(entryPath));
+    } else if (entry.isFile() && entry.name.endsWith(".md")) {
+      files.push(entryPath);
+    }
+  }
+
+  return files;
+}
+
+function writeJsonAtomic(targetPath, value) {
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+
+  const tempPath = path.join(
+    path.dirname(targetPath),
+    `.${path.basename(targetPath)}.${process.pid}.${Date.now()}.tmp`
+  );
+
+  fs.writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  fs.renameSync(tempPath, targetPath);
+}
+
+function sortClaims(a, b) {
+  return (
+    String(a.subject ?? "").localeCompare(String(b.subject ?? "")) ||
+    String(a.id ?? "").localeCompare(String(b.id ?? "")) ||
+    String(a.source?.path ?? "").localeCompare(String(b.source?.path ?? "")) ||
+    (Number(a.source?.line) || 0) - (Number(b.source?.line) || 0)
+  );
+}
+
+function findDuplicateClaimErrors(claims) {
+  const errors = [];
+  const seen = new Map();
+
+  for (const claim of claims) {
+    const where = `${claim.source?.path ?? "(unknown)"}:${claim.source?.line ?? "?"}`;
+
+    if (!claim.id) {
+      errors.push(`Claim is missing an id at ${where}`);
+      continue;
+    }
+
+    if (seen.has(claim.id)) {
+      errors.push(
+        `Duplicate claim id "${claim.id}" at ${where}; first seen at ${seen.get(claim.id)}`
+      );
+    } else {
+      seen.set(claim.id, where);
+    }
+  }
+
+  return errors;
 }
 
 async function processEvaluateScenesJob(jobPath, job, schedulerConfig, paths) {
@@ -307,15 +460,193 @@ async function processEvaluateScenesJob(jobPath, job, schedulerConfig, paths) {
   });
 }
 
+async function processTruthLedgerJob(jobPath, job, schedulerConfig, paths) {
+  const logPath = path.join(paths.logsDir, `${job.id}.log`);
+  const throttleMs = Math.max(0, Number(schedulerConfig.throttleMs) || 0);
+  const fullConfig = loadConfig(toolRoot);
+  const truthConfig = fullConfig.truthLedger ?? {};
+  const vaultRoot = job.vaultRoot
+    ? path.resolve(job.vaultRoot)
+    : path.resolve(toolRoot, "..");
+  const configuredPaths = Array.isArray(truthConfig.paths)
+    ? truthConfig.paths
+    : [];
+  const scanRoots = configuredPaths.map(scanPath => resolvePath(vaultRoot, scanPath));
+  const files = [...new Set(scanRoots.flatMap(walkMarkdownFiles))].sort();
+  const outputPath = resolvePath(
+    toolRoot,
+    truthConfig.outputPath ?? ".index/truth-ledger.json"
+  );
+  const partialsDir = path.join(paths.queueRoot, "partials", job.id);
+  const claims = [];
+  const inferredClaims = [];
+  const warnings = [];
+  const failures = [];
+  let success = 0;
+  let failed = 0;
+
+  fs.mkdirSync(partialsDir, { recursive: true });
+
+  logLine(logPath, `Starting truth ledger job ${job.id}`);
+  logLine(logPath, `Vault root: ${vaultRoot}`);
+  logLine(logPath, `Found ${files.length} note files.`);
+  logLine(logPath, `Inference: ${job.infer === false ? "off" : "on"}`);
+  logLine(logPath, `Throttle: ${throttleMs}ms`);
+
+  job.progress = {
+    total: files.length,
+    completed: 0,
+    success,
+    failed
+  };
+  job.updatedAt = new Date().toISOString();
+  writeJob(jobPath, job);
+
+  for (const [index, filePath] of files.entries()) {
+    if (isCancelRequested(paths, job.id)) {
+      throw new JobCanceledError();
+    }
+
+    const relativePath = path.relative(vaultRoot, filePath);
+    const partialPath = path.join(partialsDir, `${String(index + 1).padStart(5, "0")}.json`);
+
+    logLine(logPath, `Collecting ${relativePath}`);
+
+    job.progress = {
+      total: files.length,
+      completed: success + failed,
+      success,
+      failed,
+      currentNote: relativePath
+    };
+    job.updatedAt = new Date().toISOString();
+    writeJob(jobPath, job);
+
+    const result = await runTruthCollector(
+      [
+        "--vault-root",
+        vaultRoot,
+        "--file",
+        filePath,
+        "--output",
+        partialPath,
+        "--json",
+        job.infer === false ? "--no-infer" : "--infer"
+      ],
+      logPath,
+      paths,
+      job.id
+    );
+
+    if (result.canceled) {
+      throw new JobCanceledError();
+    }
+
+    let partial = null;
+    try {
+      partial = JSON.parse(result.stdout);
+    } catch {
+      // Leave partial as null; the failure record below captures the process output.
+    }
+
+    if (result.ok && partial) {
+      success++;
+      claims.push(...(Array.isArray(partial.claims) ? partial.claims : []));
+      inferredClaims.push(
+        ...(Array.isArray(partial.inferredClaims) ? partial.inferredClaims : [])
+      );
+      warnings.push(...(Array.isArray(partial.warnings) ? partial.warnings : []));
+    } else {
+      failed++;
+      failures.push({
+        filePath,
+        code: result.code,
+        errors: Array.isArray(partial?.errors) ? partial.errors : undefined,
+        stderr: result.stderr.trim() || undefined,
+        stdout: partial ? undefined : result.stdout.trim() || undefined,
+        error: result.error?.message
+      });
+      logLine(logPath, `Failed ${relativePath}`);
+    }
+
+    job.progress = {
+      total: files.length,
+      completed: success + failed,
+      success,
+      failed,
+      currentNote: relativePath
+    };
+    job.updatedAt = new Date().toISOString();
+    writeJob(jobPath, job);
+
+    if (throttleMs > 0 && index < files.length - 1) {
+      if (isCancelRequested(paths, job.id)) {
+        throw new JobCanceledError();
+      }
+
+      await sleepWithCancel(throttleMs, paths, job.id);
+    }
+  }
+
+  const errors = findDuplicateClaimErrors(claims);
+  const index = {
+    generatedAt: new Date().toISOString(),
+    vaultRoot,
+    outputPath,
+    claimCount: claims.length,
+    inferredClaimCount: inferredClaims.length,
+    claims: claims.sort(sortClaims),
+    inferredClaims: inferredClaims.sort(sortClaims),
+    warnings: [...new Set(warnings)].sort(),
+    errors
+  };
+  const status = failed === 0 && errors.length === 0 ? "succeeded" : "failed";
+
+  if (status === "succeeded") {
+    writeJsonAtomic(outputPath, index);
+    logLine(logPath, `Wrote truth ledger index to ${outputPath}`);
+  } else {
+    logLine(logPath, `Truth ledger crawl finished without writing index.`);
+  }
+
+  logLine(logPath);
+  logLine(
+    logPath,
+    `Truth ledger job complete. ${success} succeeded, ${failed} failed, ${errors.length} validation error(s).`
+  );
+
+  finishJob(jobPath, job, status, {
+    progress: {
+      total: files.length,
+      completed: success + failed,
+      success,
+      failed
+    },
+    outputPath,
+    claimCount: claims.length,
+    inferredClaimCount: inferredClaims.length,
+    warnings: index.warnings,
+    errors,
+    failures,
+    logPath
+  });
+}
+
 async function processJob(claimed, schedulerConfig, paths) {
   const { job, jobPath } = claimed;
 
   try {
-    if (job.type !== "evaluate-scenes") {
-      throw new Error(`Unsupported job type: ${job.type}`);
+    if (job.type === "evaluate-scenes") {
+      await processEvaluateScenesJob(jobPath, job, schedulerConfig, paths);
+      return;
     }
 
-    await processEvaluateScenesJob(jobPath, job, schedulerConfig, paths);
+    if (job.type === "truth-ledger") {
+      await processTruthLedgerJob(jobPath, job, schedulerConfig, paths);
+      return;
+    }
+
+    throw new Error(`Unsupported job type: ${job.type}`);
   } catch (error) {
     const logPath = path.join(paths.logsDir, `${job.id}.log`);
 
