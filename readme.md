@@ -13,8 +13,10 @@ From Obsidian, use these Templater templates:
 - `Templates/Queue-Reader-Awareness.md`: rerun only Reader Awareness after changing scene order.
 - `Templates/Collect-Truth-Ledger.md`: queue a throttled Truth Ledger crawl.
 - `Templates/Queue-Chronology-Index.md`: queue a throttled chronology index pass.
+- `Templates/Scheduler-Status.md`: show worker and active-job status.
 - `Templates/Start-Scheduler.md`: start a background scheduler worker.
-- `Templates/Stop-Scheduler.md`: stop the background scheduler worker.
+- `Templates/Stop-Scheduler-After-Current.md`: let the current job finish, then stop the worker.
+- `Templates/Stop-Scheduler.md`: stop the background scheduler worker immediately.
 - `Templates/Cancel-Batch-Evaluation.md`: cancel the latest queued or running job.
 
 From a terminal in `obsidianTools`:
@@ -353,7 +355,19 @@ Start the background worker from Obsidian with `Templates/Start-Scheduler.md`, o
 node scheduler/worker.mjs --watch
 ```
 
-Stop the background worker from Obsidian with `Templates/Stop-Scheduler.md`, or from a terminal:
+Check status from Obsidian with `Templates/Scheduler-Status.md`, or from a terminal:
+
+```sh
+node scheduler/status.mjs
+```
+
+Request a graceful stop after the current job from Obsidian with `Templates/Stop-Scheduler-After-Current.md`, or from a terminal:
+
+```sh
+node scheduler/stop-worker.mjs --after-current
+```
+
+Stop the background worker immediately from Obsidian with `Templates/Stop-Scheduler.md`, or from a terminal:
 
 ```sh
 node scheduler/stop-worker.mjs

@@ -11,7 +11,7 @@
     // How jobs are picked up after Templater queues them.
     // "manual": Templater queues a job and starts a worker that drains the queue, then exits.
     // "background": Templater only queues jobs; a separately started --watch worker polls for work.
-    "mode": "manual",
+    "mode": "background",
 
     // Directory for job files, logs, cancel markers, and the worker lock.
     // Relative paths are resolved from the obsidianTools folder; absolute paths are allowed.
@@ -41,7 +41,7 @@
 
     // Node executable used by Templater when it shells out to scheduler scripts.
     // Use a full path here if Obsidian cannot find "node" on PATH.
-    "nodePath": "node",
+    "nodePath": "/Users/ian/.nvm/versions/node/v22.12.0/bin/node",
 
     // What Storyboard should do after saving a changed tile order.
     // "manual": only save chapter_order and scene_order; use Queue-Reader-Awareness manually.

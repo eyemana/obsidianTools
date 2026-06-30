@@ -13,7 +13,8 @@ export function getQueuePaths(toolRoot, schedulerConfig = getSchedulerConfig(too
     queueRoot,
     jobsDir: path.join(queueRoot, "jobs"),
     logsDir: path.join(queueRoot, "logs"),
-    lockFile: path.join(queueRoot, "worker.lock")
+    lockFile: path.join(queueRoot, "worker.lock"),
+    stopFile: path.join(queueRoot, "worker.stop")
   };
 }
 
@@ -24,6 +25,33 @@ export function getCancelMarkerPath(paths, jobId) {
 export function ensureQueueDirs(paths) {
   fs.mkdirSync(paths.jobsDir, { recursive: true });
   fs.mkdirSync(paths.logsDir, { recursive: true });
+}
+
+export function requestWorkerStop(paths, reason = "Stop requested after current job.") {
+  fs.mkdirSync(paths.queueRoot, { recursive: true });
+
+  writeJsonAtomic(paths.stopFile, {
+    reason,
+    requestedAt: new Date().toISOString()
+  });
+
+  return paths.stopFile;
+}
+
+export function clearWorkerStop(paths) {
+  fs.rmSync(paths.stopFile, { force: true });
+}
+
+export function isWorkerStopRequested(paths) {
+  return fs.existsSync(paths.stopFile);
+}
+
+export function readWorkerStop(paths) {
+  try {
+    return JSON.parse(fs.readFileSync(paths.stopFile, "utf8"));
+  } catch {
+    return null;
+  }
 }
 
 export function normalizeEvaluations(evaluations) {

@@ -6,10 +6,12 @@ import { fileURLToPath } from "url";
 import { getSchedulerConfig, loadConfig } from "../tool-config.mjs";
 import {
   claimJob,
+  clearWorkerStop,
   ensureQueueDirs,
   finishJob,
   getQueuePaths,
   isCancelRequested,
+  isWorkerStopRequested,
   listQueuedJobFiles,
   normalizeEvaluations,
   readJob,
@@ -877,6 +879,11 @@ async function processAvailableJobs({ once, schedulerConfig, paths }) {
   let processed = 0;
 
   while (true) {
+    if (isWorkerStopRequested(paths)) {
+      console.log("Scheduler stop requested; not claiming more jobs.");
+      return processed;
+    }
+
     const queuedJobFiles = listQueuedJobFiles(paths);
 
     if (queuedJobFiles.length === 0) {
@@ -946,6 +953,13 @@ async function main() {
       schedulerConfig,
       paths
     });
+
+    if (isWorkerStopRequested(paths)) {
+      console.log("Scheduler stop requested; exiting after current work.");
+      clearWorkerStop(paths);
+      return;
+    }
+
     await sleep(pollIntervalMs);
   }
 }

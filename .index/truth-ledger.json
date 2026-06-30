@@ -1,0 +1,33 @@
+{
+  "generatedAt": "2026-06-30T00:46:44.516Z",
+  "vaultRoot": "/Users/ian/writers",
+  "outputPath": "/Users/ian/writers/obsidianTools/.index/truth-ledger.json",
+  "claimCount": 1,
+  "inferredClaimCount": 0,
+  "claims": [
+    {
+      "id": "claim.missing-ledger.location",
+      "authority": "author",
+      "truth": "true",
+      "subject": "Missing Ledger",
+      "statement": "The missing ledger is hidden in the storm vault.",
+      "plotThreads": [
+        "Missing Ledger"
+      ],
+      "characters": [],
+      "storyEngines": [],
+      "arcs": [],
+      "locations": [],
+      "subjects": [],
+      "tags": [],
+      "source": {
+        "path": "Segments/Tech Tips/Obsidian/POC/Plot Threads/Missing Ledger.md",
+        "absolutePath": "/Users/ian/writers/Segments/Tech Tips/Obsidian/POC/Plot Threads/Missing Ledger.md",
+        "line": 11
+      }
+    }
+  ],
+  "inferredClaims": [],
+  "warnings": [],
+  "errors": []
+}

@@ -1,5 +1,5 @@
 module.exports = async () => {
-  const { spawn } = require("child_process");
+  const { execFileSync } = require("child_process");
   const fs = require("fs");
   const path = require("path");
 
@@ -70,22 +70,16 @@ module.exports = async () => {
     return output;
   }
 
-  function parseJsonWithComments(text) {
-    return JSON.parse(stripJsonComments(text));
-  }
-
   function loadSchedulerConfig(toolsRoot) {
     const localPath = path.join(toolsRoot, "config.local.json");
     const examplePath = path.join(toolsRoot, "config.example.json");
     const configPath = fs.existsSync(localPath) ? localPath : examplePath;
 
     if (!fs.existsSync(configPath)) {
-      return {
-        nodePath: "node"
-      };
+      return { nodePath: "node" };
     }
 
-    const config = parseJsonWithComments(fs.readFileSync(configPath, "utf8"));
+    const config = JSON.parse(stripJsonComments(fs.readFileSync(configPath, "utf8")));
     return {
       nodePath: "node",
       ...(config.scheduler ?? {})
@@ -96,32 +90,32 @@ module.exports = async () => {
   const toolsRoot = path.join(basePath, "obsidianTools");
   const scheduler = loadSchedulerConfig(toolsRoot);
   const nodePath = scheduler.nodePath || "node";
-  const workerScript = path.join(toolsRoot, "scheduler", "worker.mjs");
+  const stopScript = path.join(toolsRoot, "scheduler", "stop-worker.mjs");
 
   try {
-    const child = spawn(
+    const rawOutput = execFileSync(
       nodePath,
       [
-        workerScript,
-        "--watch"
+        stopScript,
+        "--after-current"
       ],
       {
+        encoding: "utf8",
         cwd: toolsRoot,
-        detached: true,
-        stdio: "ignore",
         windowsHide: true
       }
     );
+    const outputLine = rawOutput.trim().split(/\r?\n/).filter(Boolean).pop();
+    const result = JSON.parse(outputLine || "{}");
 
-    child.on("error", error => {
-      new Notice("Failed to start scheduler. Check scheduler.nodePath in config.local.json.");
-      console.error(error.message);
-    });
-
-    child.unref();
-    new Notice("Background scheduler started.");
+    if (result.runningJobs?.length) {
+      new Notice("Scheduler will stop after the current job finishes.");
+    } else {
+      new Notice("Scheduler stop-after-current requested.");
+    }
   } catch (error) {
-    new Notice("Failed to start scheduler. See developer console.");
+    new Notice("Failed to request scheduler stop. See developer console.");
+    console.error(error.stdout?.toString() || "");
     console.error(error.stderr?.toString() || error.message);
   }
 
